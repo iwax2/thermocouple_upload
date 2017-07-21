@@ -14,6 +14,7 @@
 #include <SerialCLI.h>
 #include <ADT74x0.h>
 #include "SHT2x.h"
+#include <Adafruit_AM2315.h>
 #include <NTP.h>
 #include <Wire.h>
 
@@ -51,12 +52,16 @@ FIAPUploadAgent fiap_upload_agent;
 char sht_str[16];
 char humi_str[16];
 char adt_str[16];
+char amt_str[16];
+char amh_str[16];
 char pow_str[16];
 char vol_str[16];
 struct fiap_element fiap_elements [] = {
   { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
   { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
   { "ADT7410_Air_Temperature", adt_str, 0, &localtimezone, },
+  { "AM2315_Temperature", amt_str, 0, &localtimezone, },
+  { "AM2315_Humidity", amh_str, 0, &localtimezone, },
   { "3WSolarPowerProduction", pow_str, 0, &localtimezone, },
   { "3WSolarSupplyVoltage", vol_str, 0, &localtimezone, },
 };
@@ -64,7 +69,7 @@ struct fiap_element fiap_elements [] = {
 //sensor
 ADT74x0 adt_sensor;
 SHT2x sht_sensor;
-
+Adafruit_AM2315 am2315;
 
 void enable_debug()
 {
@@ -125,6 +130,7 @@ void setup()
   Wire.begin();
   adt_sensor.begin(0x48);
   sht_sensor.begin();
+  am2315.begin();
 
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
@@ -153,7 +159,7 @@ void loop()
     dtostrf(solar_power, -1, 2, p_buf);
     dtostrf(solar_voltage, -1, 2, v_buf);
     debug_msg(p_buf);
-    debug_msg(v_buf);
+    //    debug_msg(v_buf);
 
     if (epoch % 60 == 0) {
       sht_sensor.heaterOn();
@@ -171,6 +177,12 @@ void loop()
       dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
       debug_msg("SHT21 humi");
       debug_msg(humi_str);
+      dtostrf(am2315.readTemperature(), -1, 2, amt_str);
+      debug_msg("AM2315 temp");
+      debug_msg(amt_str);
+      dtostrf(am2315.readHumidity(), -1, 2, amh_str);
+      debug_msg("AM2315 humi");
+      debug_msg(amh_str);
 
       for (int i = 0; i < sizeof(fiap_elements) / sizeof(fiap_elements[0]); i++) {
         fiap_elements[i].time = epoch;
