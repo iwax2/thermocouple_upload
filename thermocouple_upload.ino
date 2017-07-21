@@ -19,6 +19,8 @@
 
 #define GLED 22
 #define RLED 23
+#define PMOS_PWM 5
+#define NMOS_PWM 6
 
 //cli
 SerialCLI      commandline(Serial);
@@ -49,15 +51,20 @@ FIAPUploadAgent fiap_upload_agent;
 char sht_str[16];
 char humi_str[16];
 char adt_str[16];
+char pow_str[16];
+char vol_str[16];
 struct fiap_element fiap_elements [] = {
   { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
   { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
   { "ADT7410_Air_Temperature", adt_str, 0, &localtimezone, },
+  { "3WSolarPowerProduction", pow_str, 0, &localtimezone, },
+  { "3WSolarSupplyVoltage", vol_str, 0, &localtimezone, },
 };
 
 //sensor
 ADT74x0 adt_sensor;
 SHT2x sht_sensor;
+
 
 void enable_debug()
 {
@@ -122,6 +129,7 @@ void setup()
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
   digitalWrite(RLED, HIGH); // LED on when pin is High
+  analogWrite(NMOS_PWM, 64);
 }
 
 void loop()
@@ -135,20 +143,32 @@ void loop()
   }
 
   if (epoch != old_epoch) {
-    char buf[32];
-    dtostrf(adt_sensor.readTemperature(), 16, 2, buf);
-    debug_msg(buf);
+    char p_buf[32];
+    char v_buf[32];
+    int A0value = analogRead(A0); // Solar cuurent through PMOS (1ohm)
+    double solar_current = double(A0value * 5) / 1023.0; // V = I = 60 x 5 / 1023 = 0.3
+    double solar_power   = solar_current * solar_current; // P = I^2 x R
+    int A1value = analogRead(A1); // Solar voltage 10V -> 5V 5V->1023
+    double solar_voltage = double(A1value * 10) / 1023.0; // actual voltage
+    dtostrf(solar_power, -1, 2, p_buf);
+    dtostrf(solar_voltage, -1, 2, v_buf);
+    debug_msg(p_buf);
+    debug_msg(v_buf);
 
     if (epoch % 60 == 0) {
       sht_sensor.heaterOn();
       debug_msg("uploading...");
-      dtostrf(adt_sensor.readTemperature(), 10, 2, adt_str);
+      dtostrf(solar_power, -1, 2, pow_str);
+      debug_msg(pow_str);
+      dtostrf(solar_voltage, -1, 2, vol_str);
+      debug_msg(vol_str);
+      dtostrf(adt_sensor.readTemperature(), -1, 2, adt_str);
       debug_msg("ADT7410 temp");
       debug_msg(adt_str);
-      dtostrf(sht_sensor.readTemperature(), 10, 2, sht_str);
+      dtostrf(sht_sensor.readTemperature(), -1, 2, sht_str);
       debug_msg("SHT21 temp");
       debug_msg(sht_str);
-      dtostrf(sht_sensor.readHumidity(), 10, 2, humi_str);
+      dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
       debug_msg("SHT21 humi");
       debug_msg(humi_str);
 
