@@ -57,8 +57,8 @@ char amh_str[16];
 char pow_str[16];
 char vol_str[16];
 struct fiap_element fiap_elements [] = {
-  { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
-  { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
+  //  { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
+  //  { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
   { "ADT7410_Air_Temperature", adt_str, 0, &localtimezone, },
   { "AM2315_Temperature", amt_str, 0, &localtimezone, },
   { "AM2315_Humidity", amh_str, 0, &localtimezone, },
@@ -135,7 +135,8 @@ void setup()
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
   digitalWrite(RLED, HIGH); // LED on when pin is High
-  analogWrite(NMOS_PWM, 64);
+  //  analogWrite(NMOS_PWM, 64); // PWM:1/4
+  analogWrite(NMOS_PWM, 128); // PWM:1/2
 }
 
 void loop()
@@ -149,40 +150,54 @@ void loop()
   }
 
   if (epoch != old_epoch) {
-    char p_buf[32];
-    char v_buf[32];
-    int A0value = analogRead(A0); // Solar cuurent through PMOS (1ohm)
-    double solar_current = double(A0value * 5) / 1023.0; // V = I = 60 x 5 / 1023 = 0.3
-    double solar_power   = solar_current * solar_current; // P = I^2 x R
+    char buf[48];
+    char i_buf[8];
+    char v_buf[8];
+    char p_buf[8];
+    int A0value = analogRead(A0); // Solar cuurent through PMOS (1ohm) 100 times amplified
+    sprintf(buf, "A0=%4d, I=", A0value);
+    double solar_current = double(A0value * 5) / 102300.0; // I = 100 x 5 / 1023 / 100 = 0.005[A]
+    dtostrf(solar_current * 1000, -1, 1, i_buf);
+    strcat(buf, i_buf);
+    strcat(buf, "[mA], V=");
     int A1value = analogRead(A1); // Solar voltage 10V -> 5V 5V->1023
     double solar_voltage = double(A1value * 10) / 1023.0; // actual voltage
-    dtostrf(solar_power, -1, 2, p_buf);
     dtostrf(solar_voltage, -1, 2, v_buf);
-    debug_msg(p_buf);
-    //    debug_msg(v_buf);
+    strcat(buf, v_buf);
+    strcat(buf, "[V], P=");
+    double solar_power   = solar_current * solar_voltage; // P = I x V
+    dtostrf(solar_power, -1, 4, p_buf);
+    strcat(buf, p_buf);
+    strcat(buf, "[W].");
+    debug_msg(buf);
 
     if (epoch % 60 == 0) {
-      sht_sensor.heaterOn();
       debug_msg("uploading...");
-      dtostrf(solar_power, -1, 2, pow_str);
+      //      sht_sensor.heaterOn();
+      dtostrf(solar_power, -1, 4, pow_str);
       debug_msg(pow_str);
       dtostrf(solar_voltage, -1, 2, vol_str);
       debug_msg(vol_str);
       dtostrf(adt_sensor.readTemperature(), -1, 2, adt_str);
       debug_msg("ADT7410 temp");
       debug_msg(adt_str);
-      dtostrf(sht_sensor.readTemperature(), -1, 2, sht_str);
-      debug_msg("SHT21 temp");
-      debug_msg(sht_str);
-      dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
-      debug_msg("SHT21 humi");
-      debug_msg(humi_str);
-      dtostrf(am2315.readTemperature(), -1, 2, amt_str);
-      debug_msg("AM2315 temp");
-      debug_msg(amt_str);
-      dtostrf(am2315.readHumidity(), -1, 2, amh_str);
-      debug_msg("AM2315 humi");
-      debug_msg(amh_str);
+      //      dtostrf(sht_sensor.readTemperature(), -1, 2, sht_str);
+      //      debug_msg("SHT21 temp");
+      //      debug_msg(sht_str);
+      //      dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
+      //      debug_msg("SHT21 humi");
+      //      debug_msg(humi_str);
+      float am_temp, am_humi;
+      if ( am2315.readTemperatureAndHumidity( am_temp, am_humi ) ) {
+        dtostrf(am_temp, -1, 1, amt_str); // Accuracy is pm 0.1
+        debug_msg("AM2315 temp");
+        debug_msg(amt_str);
+        dtostrf(am_humi, -1, 1, amh_str);
+        debug_msg("AM2315 humi");
+        debug_msg(amh_str);
+      } else {
+        debug_msg("[Error] Cannot get temperature and humidity by AM2315!");
+      }
 
       for (int i = 0; i < sizeof(fiap_elements) / sizeof(fiap_elements[0]); i++) {
         fiap_elements[i].time = epoch;
