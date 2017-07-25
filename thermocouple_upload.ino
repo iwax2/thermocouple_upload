@@ -57,8 +57,8 @@ char amh_str[16];
 char pow_str[16];
 char vol_str[16];
 struct fiap_element fiap_elements [] = {
-  //  { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
-  //  { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
+  { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
+  { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
   { "ADT7410_Air_Temperature", adt_str, 0, &localtimezone, },
   { "AM2315_Temperature", amt_str, 0, &localtimezone, },
   { "AM2315_Humidity", amh_str, 0, &localtimezone, },
@@ -181,12 +181,12 @@ void loop()
       dtostrf(adt_sensor.readTemperature(), -1, 2, adt_str);
       debug_msg("ADT7410 temp");
       debug_msg(adt_str);
-      //      dtostrf(sht_sensor.readTemperature(), -1, 2, sht_str);
-      //      debug_msg("SHT21 temp");
-      //      debug_msg(sht_str);
-      //      dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
-      //      debug_msg("SHT21 humi");
-      //      debug_msg(humi_str);
+      dtostrf(sht_sensor.readTemperature(), -1, 2, sht_str);
+      debug_msg("SHT21 temp");
+      debug_msg(sht_str);
+      dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
+      debug_msg("SHT21 humi");
+      debug_msg(humi_str);
       float am_temp, am_humi;
       if ( am2315.readTemperatureAndHumidity( am_temp, am_humi ) ) {
         dtostrf(am_temp, -1, 1, amt_str); // Accuracy is pm 0.1
