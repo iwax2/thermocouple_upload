@@ -11,4 +11,5 @@ Fork from https://github.com/PlantFactory/temp_upload/tree/not-pocotsun
 * [NTP](https://github.com/PlantFactory/NTP)
 * [ADT74x0](https://github.com/PlantFactory/ADT74x0)
 * [SHT2x](https://github.com/PlantFactory/SHT2x)
-
+* [AM2315](https://github.com/adafruit/Adafruit_AM2315)
+* [HMP155](https://github.com/plantfactory/HMP155)
