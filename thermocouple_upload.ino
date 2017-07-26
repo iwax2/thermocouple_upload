@@ -66,10 +66,15 @@ struct fiap_element fiap_elements [] = {
   { "3WSolarSupplyVoltage", vol_str, 0, &localtimezone, },
 };
 
-//sensor
+// sensor
 ADT74x0 adt_sensor;
 SHT2x sht_sensor;
 Adafruit_AM2315 am2315;
+
+// previous power production
+int history_power[3];
+int prev_direction = 2;
+int pmos_pwm_value = 128;
 
 void enable_debug()
 {
@@ -135,8 +140,9 @@ void setup()
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
   digitalWrite(RLED, HIGH); // LED on when pin is High
-  //  analogWrite(NMOS_PWM, 64); // PWM:1/4
-  analogWrite(NMOS_PWM, 128); // PWM:1/2
+  //  analogWrite(NMOS_PWM, 63); // PWM:1/4
+  analogWrite(NMOS_PWM, 127); // PWM:1/2
+  //  analogWrite(PMOS_PWM, pmos_pwm_value); // always on (255)
 }
 
 void loop()
@@ -150,26 +156,48 @@ void loop()
   }
 
   if (epoch != old_epoch) {
-    char buf[48];
-    char i_buf[8];
-    char v_buf[8];
-    char p_buf[8];
+    char buf[80];
+    char bufbuf[8];
     int A0value = analogRead(A0); // Solar cuurent through PMOS (1ohm) 100 times amplified
     sprintf(buf, "A0=%4d, I=", A0value);
     double solar_current = double(A0value * 5) / 102300.0; // I = 100 x 5 / 1023 / 100 = 0.005[A]
-    dtostrf(solar_current * 1000, -1, 1, i_buf);
-    strcat(buf, i_buf);
+    dtostrf(solar_current * 1000, -1, 1, bufbuf);
+    strcat(buf, bufbuf);
     strcat(buf, "[mA], V=");
     int A1value = analogRead(A1); // Solar voltage 10V -> 5V 5V->1023
     double solar_voltage = double(A1value * 10) / 1023.0; // actual voltage
-    dtostrf(solar_voltage, -1, 2, v_buf);
-    strcat(buf, v_buf);
+    dtostrf(solar_voltage, -1, 2, bufbuf);
+    strcat(buf, bufbuf);
     strcat(buf, "[V], P=");
     double solar_power   = solar_current * solar_voltage; // P = I x V
-    dtostrf(solar_power, -1, 4, p_buf);
-    strcat(buf, p_buf);
+    dtostrf(solar_power, -1, 4, bufbuf);
+    strcat(buf, bufbuf);
     strcat(buf, "[W].");
+    //
+    //    history_power[epoch % 3] = solar_power * 1000;
+    //    int p_c = history_power[epoch % 3];
+    //    int p_1 = history_power[(epoch + 1) % 3];
+    //    int p_2 = history_power[(epoch + 2) % 3];
+    //    if ( p_c > p_1 && p_c > p_2 ) { // 前よりも大きくなっていたら
+    //      pmos_pwm_value += prev_direction; // さらに山を登る
+    //      pmos_pwm_value = (pmos_pwm_value <  0) ?   1 : pmos_pwm_value;
+    //      pmos_pwm_value = (pmos_pwm_value > 255) ? 254 : pmos_pwm_value;
+    //    } else if ( p_c > p_1 && p_c > p_2 ) { // 前よりも小さくなっていたら
+    //      prev_direction *= -1; // change direction
+    //      pmos_pwm_value += prev_direction;
+    //      pmos_pwm_value = (pmos_pwm_value <  0) ?   1 : pmos_pwm_value;
+    //      pmos_pwm_value = (pmos_pwm_value > 255) ? 254 : pmos_pwm_value;
+    //    } else {
+    //      // 大きくなっていたり小さくなっていたりするならちょっと今の値で様子を見る
+    //    }
+    //
+    //    analogWrite(PMOS_PWM, pmos_pwm_value);
+    //    sprintf(p_buf, "%d,%d,%d,PWM_VALUE=%d.", p_1,p_2,p_c,pmos_pwm_value);
+    //    strcat(buf, p_buf);
+    //
+    //    dtostrf(adt_sensor.readTemperature(), -1, 2, buf);
     debug_msg(buf);
+
 
     if (epoch % 60 == 0) {
       debug_msg("uploading...");
