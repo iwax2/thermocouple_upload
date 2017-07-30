@@ -17,6 +17,7 @@
 #include <Adafruit_AM2315.h>
 #include <NTP.h>
 #include <Wire.h>
+#include "HMP155.h"
 
 #define GLED 22
 #define RLED 23
@@ -54,6 +55,8 @@ char humi_str[16];
 char adt_str[16];
 char amt_str[16];
 char amh_str[16];
+char hmt_str[16];
+char hmh_str[16];
 char pow_str[16];
 char vol_str[16];
 struct fiap_element fiap_elements [] = {
@@ -62,6 +65,8 @@ struct fiap_element fiap_elements [] = {
   { "ADT7410_Air_Temperature", adt_str, 0, &localtimezone, },
   { "AM2315_Temperature", amt_str, 0, &localtimezone, },
   { "AM2315_Humidity", amh_str, 0, &localtimezone, },
+  { "HMP155_Temperature", hmt_str, 0, &localtimezone, },
+  { "HMP155_Humidity", hmh_str, 0, &localtimezone, },
   { "3WSolarPowerProduction", pow_str, 0, &localtimezone, },
   { "3WSolarSupplyVoltage", vol_str, 0, &localtimezone, },
 };
@@ -70,6 +75,7 @@ struct fiap_element fiap_elements [] = {
 ADT74x0 adt_sensor;
 SHT2x sht_sensor;
 Adafruit_AM2315 am2315;
+HMP155 vaisala(Serial2, 24);
 
 // previous power production
 int history_power[3];
@@ -136,6 +142,7 @@ void setup()
   adt_sensor.begin(0x48);
   sht_sensor.begin();
   am2315.begin();
+  vaisala.begin();
 
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
@@ -226,6 +233,13 @@ void loop()
       } else {
         debug_msg("[Error] Cannot get temperature and humidity by AM2315!");
       }
+      vaisala.read();
+      dtostrf(vaisala.ta(), -1, 2, hmt_str);
+      debug_msg("HMP155 temp");
+      debug_msg(hmt_str);
+      dtostrf(vaisala.rh(), -1, 2, hmh_str);
+      debug_msg("HMP155 humi");
+      debug_msg(hmh_str);
 
       for (int i = 0; i < sizeof(fiap_elements) / sizeof(fiap_elements[0]); i++) {
         fiap_elements[i].time = epoch;
