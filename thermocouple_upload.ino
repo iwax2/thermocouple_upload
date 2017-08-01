@@ -141,15 +141,20 @@ void setup()
   Wire.begin();
   adt_sensor.begin(0x48);
   sht_sensor.begin();
+  Serial.println("SHT OK");
   am2315.begin();
+  Serial.println("am2315 OK");
+  Serial2.begin(9600, SERIAL_7E1);
+  pinMode(24, OUTPUT);
   vaisala.begin();
-
+  Serial.println("visala OK");
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
   digitalWrite(RLED, HIGH); // LED on when pin is High
   //  analogWrite(NMOS_PWM, 63); // PWM:1/4
   analogWrite(NMOS_PWM, 127); // PWM:1/2
   //  analogWrite(PMOS_PWM, pmos_pwm_value); // always on (255)
+  sht_sensor.heaterOn();
 }
 
 void loop()
@@ -203,12 +208,13 @@ void loop()
     //    strcat(buf, p_buf);
     //
     //    dtostrf(adt_sensor.readTemperature(), -1, 2, buf);
-    debug_msg(buf);
+//    debug_msg(buf);
 
 
-    if (epoch % 60 == 0) {
+    if (epoch % 30 == 0) {
       debug_msg("uploading...");
-      //      sht_sensor.heaterOn();
+      debug_msg("HMP155 humi");
+      debug_msg(hmh_str);
       dtostrf(solar_power, -1, 4, pow_str);
       debug_msg(pow_str);
       dtostrf(solar_voltage, -1, 2, vol_str);
@@ -238,8 +244,6 @@ void loop()
       debug_msg("HMP155 temp");
       debug_msg(hmt_str);
       dtostrf(vaisala.rh(), -1, 2, hmh_str);
-      debug_msg("HMP155 humi");
-      debug_msg(hmh_str);
 
       for (int i = 0; i < sizeof(fiap_elements) / sizeof(fiap_elements[0]); i++) {
         fiap_elements[i].time = epoch;
