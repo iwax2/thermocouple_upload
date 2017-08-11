@@ -12,12 +12,15 @@
 #include <TimeLib.h>
 #include <LocalTimeLib.h>
 #include <SerialCLI.h>
-#include <ADT74x0.h>
-#include "SHT2x.h"
-#include <Adafruit_AM2315.h>
 #include <NTP.h>
 #include <Wire.h>
+#include <ADT74x0.h>
+#include "SHT2x.h"
 #include "HMP155.h"
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#define SEALEVELPRESSURE_HPA (1013.25)
+
 
 #define GLED 22
 #define RLED 23
@@ -50,37 +53,67 @@ TimeZone localtimezone = { 9 * 60 * 60, 0, "+09:00" };
 
 //fiap
 FIAPUploadAgent fiap_upload_agent;
-char sht_str[16];
-char humi_str[16];
-char adt_str[16];
-char amt_str[16];
-char amh_str[16];
-char hmt_str[16];
-char hmh_str[16];
-char pow_str[16];
-char vol_str[16];
+char hmp155_temp_str[16];
+char hmp155_humi_str[16];
+char hmp155_vp_str[16];
+char hmp155_vpd_str[16];
+char adt7410_temp_str[16];
+char  sht21_temp_str[16];
+char  sht21_humi_str[16];
+char  sht21_vp_str[16];
+char  sht21_vpd_str[16];
+char sht21g_humi_str[16];
+char sht21g_vp_str[16];
+char sht21g_vpd_str[16];
+char bme280_pres_str[16];
+char bme280_temp_str[16];
+char bme280_humi_str[16];
+char bme280_vp_str[16];
+char bme280_vpd_str[16];
 struct fiap_element fiap_elements [] = {
-  { "SHT21_Heating_Temperature", sht_str, 0, &localtimezone, },
-  { "SHT21_Heating_Humidity", humi_str, 0, &localtimezone, },
-  { "ADT7410_Air_Temperature", adt_str, 0, &localtimezone, },
-  { "AM2315_Temperature", amt_str, 0, &localtimezone, },
-  { "AM2315_Humidity", amh_str, 0, &localtimezone, },
-  { "HMP155_Temperature", hmt_str, 0, &localtimezone, },
-  { "HMP155_Humidity", hmh_str, 0, &localtimezone, },
-  { "3WSolarPowerProduction", pow_str, 0, &localtimezone, },
-  { "3WSolarSupplyVoltage", vol_str, 0, &localtimezone, },
+  { "HMP155_Temperature", hmp155_temp_str, 0, &localtimezone, },
+  { "HMP155_Humidity", hmp155_humi_str, 0, &localtimezone, },
+  { "HMP155_VP", hmp155_vp_str, 0, &localtimezone, },
+  { "HMP155_VPD", hmp155_vpd_str, 0, &localtimezone, },
+  { "BME280_Pressure", bme280_pres_str, 0, &localtimezone, },
+  { "BME280_Temperature", bme280_temp_str, 0, &localtimezone, },
+  { "BME280_Humidity", bme280_humi_str, 0, &localtimezone, },
+  { "BME280_VP", bme280_vp_str, 0, &localtimezone, },
+  { "BME280_VPD", bme280_vpd_str, 0, &localtimezone, },
+  { "ADT7410_Temperature", adt7410_temp_str, 0, &localtimezone, },
+  { "SHT21_Temperature", sht21_temp_str, 0, &localtimezone, },
+  { "SHT21_Humidity", sht21_humi_str, 0, &localtimezone, },
+  { "SHT21_VP", sht21_vp_str, 0, &localtimezone, },
+  { "SHT21_VPD", sht21_vpd_str, 0, &localtimezone, },
+  { "SHT21_GuessHumidity", sht21g_humi_str, 0, &localtimezone, },
+  { "SHT21_GuessVP", sht21g_vp_str, 0, &localtimezone, },
+  { "SHT21_GuessVPD", sht21g_vpd_str, 0, &localtimezone, },
+//  { "3WSolarPowerProduction", pow_str, 0, &localtimezone, },
+//  { "3WSolarSupplyVoltage", vol_str, 0, &localtimezone, },
 };
 
 // sensor
 ADT74x0 adt_sensor;
 SHT2x sht_sensor;
-Adafruit_AM2315 am2315;
 HMP155 vaisala(Serial2, 24);
+Adafruit_BME280 bme; // I2C
 
 // previous power production
 int history_power[3];
 int prev_direction = 2;
 int pmos_pwm_value = 128;
+
+// Return the satureted Vapour pressure at the temperature
+double temp2svp( double temp ) {
+  temp = temp + 273.15;
+  double a = -6096.9385 / temp;
+  double b = 16.635794;
+  double c = -2.711193 / 100.0 * temp;
+  double d = 1.673952 / 100000.0 * temp * temp;
+  double e = 2.433502 * log(temp);
+  return ( exp( a + b + c + d + e ) * 100.0 );
+}
+
 
 void enable_debug()
 {
@@ -113,7 +146,7 @@ void setup()
   commandline.add_command("debug", enable_debug);
   commandline.add_command("nodebug", disable_debug);
 
-  commandline.begin(9600, "ADT74x0 Gateway");
+  commandline.begin(9600, "Vaisala HMP155 Gateway");
 
   // ethernet & ip connection
   if (dhcp.get_val() == 1) {
@@ -141,20 +174,20 @@ void setup()
   Wire.begin();
   adt_sensor.begin(0x48);
   sht_sensor.begin();
-  Serial.println("SHT OK");
-  am2315.begin();
-  Serial.println("am2315 OK");
+  sht_sensor.heaterOn();
+  Serial.println("SHT21 Ready");
   Serial2.begin(9600, SERIAL_7E1);
   pinMode(24, OUTPUT);
   vaisala.begin();
-  Serial.println("visala OK");
+  Serial.println("Vaisala Ready");
+  bme.begin(0x76);
+  Serial.println("BME280 Ready");
   pinMode(GLED, OUTPUT);
   pinMode(RLED, OUTPUT);
   digitalWrite(RLED, HIGH); // LED on when pin is High
   //  analogWrite(NMOS_PWM, 63); // PWM:1/4
   analogWrite(NMOS_PWM, 127); // PWM:1/2
   //  analogWrite(PMOS_PWM, pmos_pwm_value); // always on (255)
-  sht_sensor.heaterOn();
 }
 
 void loop()
@@ -170,80 +203,127 @@ void loop()
   if (epoch != old_epoch) {
     char buf[80];
     char bufbuf[8];
-    int A0value = analogRead(A0); // Solar cuurent through PMOS (1ohm) 100 times amplified
-    sprintf(buf, "A0=%4d, I=", A0value);
-    double solar_current = double(A0value * 5) / 102300.0; // I = 100 x 5 / 1023 / 100 = 0.005[A]
-    dtostrf(solar_current * 1000, -1, 1, bufbuf);
-    strcat(buf, bufbuf);
-    strcat(buf, "[mA], V=");
-    int A1value = analogRead(A1); // Solar voltage 10V -> 5V 5V->1023
-    double solar_voltage = double(A1value * 10) / 1023.0; // actual voltage
-    dtostrf(solar_voltage, -1, 2, bufbuf);
-    strcat(buf, bufbuf);
-    strcat(buf, "[V], P=");
-    double solar_power   = solar_current * solar_voltage; // P = I x V
-    dtostrf(solar_power, -1, 4, bufbuf);
-    strcat(buf, bufbuf);
-    strcat(buf, "[W].");
-    //
-    //    history_power[epoch % 3] = solar_power * 1000;
-    //    int p_c = history_power[epoch % 3];
-    //    int p_1 = history_power[(epoch + 1) % 3];
-    //    int p_2 = history_power[(epoch + 2) % 3];
-    //    if ( p_c > p_1 && p_c > p_2 ) { // 前よりも大きくなっていたら
-    //      pmos_pwm_value += prev_direction; // さらに山を登る
-    //      pmos_pwm_value = (pmos_pwm_value <  0) ?   1 : pmos_pwm_value;
-    //      pmos_pwm_value = (pmos_pwm_value > 255) ? 254 : pmos_pwm_value;
-    //    } else if ( p_c > p_1 && p_c > p_2 ) { // 前よりも小さくなっていたら
-    //      prev_direction *= -1; // change direction
-    //      pmos_pwm_value += prev_direction;
-    //      pmos_pwm_value = (pmos_pwm_value <  0) ?   1 : pmos_pwm_value;
-    //      pmos_pwm_value = (pmos_pwm_value > 255) ? 254 : pmos_pwm_value;
-    //    } else {
-    //      // 大きくなっていたり小さくなっていたりするならちょっと今の値で様子を見る
-    //    }
-    //
-    //    analogWrite(PMOS_PWM, pmos_pwm_value);
-    //    sprintf(p_buf, "%d,%d,%d,PWM_VALUE=%d.", p_1,p_2,p_c,pmos_pwm_value);
-    //    strcat(buf, p_buf);
-    //
-    //    dtostrf(adt_sensor.readTemperature(), -1, 2, buf);
-//    debug_msg(buf);
+    //    int A0value = analogRead(A0); // Solar cuurent through PMOS (1ohm) 100 times amplified
+    //    sprintf(buf, "A0=%4d, I=", A0value);
+    //    double solar_current = double(A0value * 5) / 102300.0; // I = 100 x 5 / 1023 / 100 = 0.005[A]
+    //    dtostrf(solar_current * 1000, -1, 1, bufbuf);
+    //    strcat(buf, bufbuf);
+    //    strcat(buf, "[mA], V=");
+    //    int A1value = analogRead(A1); // Solar voltage 10V -> 5V 5V->1023
+    //    double solar_voltage = double(A1value * 10) / 1023.0; // actual voltage
+    //    dtostrf(solar_voltage, -1, 2, bufbuf);
+    //    strcat(buf, bufbuf);
+    //    strcat(buf, "[V], P=");
+    //    double solar_power   = solar_current * solar_voltage; // P = I x V
+    //    dtostrf(solar_power, -1, 4, bufbuf);
+    //    strcat(buf, bufbuf);
+    //    strcat(buf, "[W].");
+    //    //
+    //    //    history_power[epoch % 3] = solar_power * 1000;
+    //    //    int p_c = history_power[epoch % 3];
+    //    //    int p_1 = history_power[(epoch + 1) % 3];
+    //    //    int p_2 = history_power[(epoch + 2) % 3];
+    //    //    if ( p_c > p_1 && p_c > p_2 ) { // 前よりも大きくなっていたら
+    //    //      pmos_pwm_value += prev_direction; // さらに山を登る
+    //    //      pmos_pwm_value = (pmos_pwm_value <  0) ?   1 : pmos_pwm_value;
+    //    //      pmos_pwm_value = (pmos_pwm_value > 255) ? 254 : pmos_pwm_value;
+    //    //    } else if ( p_c > p_1 && p_c > p_2 ) { // 前よりも小さくなっていたら
+    //    //      prev_direction *= -1; // change direction
+    //    //      pmos_pwm_value += prev_direction;
+    //    //      pmos_pwm_value = (pmos_pwm_value <  0) ?   1 : pmos_pwm_value;
+    //    //      pmos_pwm_value = (pmos_pwm_value > 255) ? 254 : pmos_pwm_value;
+    //    //    } else {
+    //    //      // 大きくなっていたり小さくなっていたりするならちょっと今の値で様子を見る
+    //    //    }
+    //    //
+    //    //    analogWrite(PMOS_PWM, pmos_pwm_value);
+    //    //    sprintf(p_buf, "%d,%d,%d,PWM_VALUE=%d.", p_1,p_2,p_c,pmos_pwm_value);
+    //    //    strcat(buf, p_buf);
+    //    //
+    //    //    dtostrf(adt_sensor.readTemperature(), -1, 2, buf);
+    //    //    debug_msg(buf);
+    vaisala.read();
+    float hmp155_temp = vaisala.ta();
+    dtostrf(hmp155_temp, -1, 2, hmp155_temp_str);
+    float hmp155_humi = vaisala.rh();
+    dtostrf(hmp155_humi, -1, 2, hmp155_humi_str);
+    float hmp155_svp = temp2svp(hmp155_temp); // Saturated Vapour Pressure [Pa]
+    float hmp155_vp = hmp155_svp * hmp155_humi / 100.0; // Vapour Pressure [Pa]
+    dtostrf(hmp155_vp, -1, 2, hmp155_vp_str);
+    float hmp155_vpd = (hmp155_svp - hmp155_vp) / 1000.0; // Vapour Pressure Deficit [hPa]
+    dtostrf(hmp155_vpd, -1, 4, hmp155_vpd_str);
+
+    float bme280_temp = bme.readTemperature();
+    dtostrf(bme280_temp, -1, 2, bme280_temp_str);
+    float bme280_humi = bme.readHumidity();
+    dtostrf(bme280_humi, -1, 2, bme280_humi_str);
+    float bme280_svp = temp2svp(bme280_temp); // Saturated Vapour Pressure [Pa]
+    float bme280_vp = bme280_svp * bme280_humi / 100.0; // Vapour Pressure [Pa]
+    dtostrf(bme280_vp, -1, 2, bme280_vp_str);
+    float bme280_vpd = (bme280_svp - bme280_vp) / 1000.0; // Vapour Pressure Deficit [hPa]
+    dtostrf(bme280_vpd, -1, 4, bme280_vpd_str);
+    float bme280_pres = bme.readPressure() / 100.0; // hPa
+    dtostrf(bme280_pres, -1, 4, bme280_pres_str);
+
+    float adt7410_temp = adt_sensor.readTemperature();
+    dtostrf(adt7410_temp, -1, 2, adt7410_temp_str);
+
+    float sht21_temp = sht_sensor.readTemperature();
+    dtostrf(sht21_temp, -1, 2, sht21_temp_str);
+    float sht21_humi = sht_sensor.readHumidity();
+    dtostrf(sht21_humi, -1, 2, sht21_humi_str);
+    float sht21_svp = temp2svp(sht21_temp); // Saturated Vapour Pressure [Pa]
+    float sht21_vp = sht21_svp * sht21_humi / 100.0;  // Vapour Pressure [Pa]
+    dtostrf(sht21_vp, -1, 2, sht21_vp_str);
+    float sht21_vpd = (sht21_svp - sht21_vp) / 1000.0; // Vapour Pressure Deficit [hPa]
+    dtostrf(sht21_vpd, -1, 4, sht21_vpd_str);
+
+    //    float sht21g_humi = 1.2225 * sht21_humi -16.229; // approximate Vaisala (Cloudy)
+    float sht21g_humi = 1.2419 * sht21_humi - 18.064; // approximate Vaisala (Sunny)
+    dtostrf(sht21g_humi, -1, 2, sht21g_humi_str);
+    float sht21g_svp = temp2svp(adt7410_temp); // Saturated Vapour Pressure [Pa]
+    float sht21g_vp = sht21g_svp * sht21g_humi / 100.0; // Vapour Pressure [Pa]
+    dtostrf(sht21g_vp, -1, 2, sht21g_vp_str);
+    float sht21g_vpd = (sht21g_svp - sht21g_vp) / 1000.0; // Vapour Pressure Deficit [hPa]
+    dtostrf(sht21g_vpd, -1, 4, sht21g_vpd_str);
+
+    strcat(buf, hmp155_temp_str);
+    strcat(buf, ",");
+    strcat(buf, hmp155_humi_str);
+    strcat(buf, ",");
+    strcat(buf, hmp155_vp_str);
+    strcat(buf, ",");
+    strcat(buf, hmp155_vpd_str);
+    strcat(buf, ",BME280,");
+    strcat(buf, bme280_temp_str);
+    strcat(buf, ",");
+    strcat(buf, bme280_humi_str);
+    strcat(buf, ",");
+    strcat(buf, bme280_vp_str);
+    strcat(buf, ",");
+    strcat(buf, bme280_vpd_str);
+    strcat(buf, ",SHT21,");
+    strcat(buf, sht21_temp_str);
+    strcat(buf, ",");
+    strcat(buf, sht21_humi_str);
+    strcat(buf, ",");
+    strcat(buf, sht21_vp_str);
+    strcat(buf, ",");
+    strcat(buf, sht21_vpd_str);
+    strcat(buf, ",SHT21Guess,");
+    strcat(buf, sht21g_humi_str);
+    strcat(buf, ",");
+    strcat(buf, sht21g_vp_str);
+    strcat(buf, ",");
+    strcat(buf, sht21g_vpd_str);
+    debug_msg(buf);
+    //    Serial.println(buf);
+
 
 
     if (epoch % 30 == 0) {
       debug_msg("uploading...");
-      debug_msg("HMP155 humi");
-      debug_msg(hmh_str);
-      dtostrf(solar_power, -1, 4, pow_str);
-      debug_msg(pow_str);
-      dtostrf(solar_voltage, -1, 2, vol_str);
-      debug_msg(vol_str);
-      dtostrf(adt_sensor.readTemperature(), -1, 2, adt_str);
-      debug_msg("ADT7410 temp");
-      debug_msg(adt_str);
-      dtostrf(sht_sensor.readTemperature(), -1, 2, sht_str);
-      debug_msg("SHT21 temp");
-      debug_msg(sht_str);
-      dtostrf(sht_sensor.readHumidity(), -1, 2, humi_str);
-      debug_msg("SHT21 humi");
-      debug_msg(humi_str);
-      float am_temp, am_humi;
-      if ( am2315.readTemperatureAndHumidity( am_temp, am_humi ) ) {
-        dtostrf(am_temp, -1, 1, amt_str); // Accuracy is pm 0.1
-        debug_msg("AM2315 temp");
-        debug_msg(amt_str);
-        dtostrf(am_humi, -1, 1, amh_str);
-        debug_msg("AM2315 humi");
-        debug_msg(amh_str);
-      } else {
-        debug_msg("[Error] Cannot get temperature and humidity by AM2315!");
-      }
-      vaisala.read();
-      dtostrf(vaisala.ta(), -1, 2, hmt_str);
-      debug_msg("HMP155 temp");
-      debug_msg(hmt_str);
-      dtostrf(vaisala.rh(), -1, 2, hmh_str);
+      digitalWrite(GLED, HIGH); // LED on when pin is High
 
       for (int i = 0; i < sizeof(fiap_elements) / sizeof(fiap_elements[0]); i++) {
         fiap_elements[i].time = epoch;
@@ -255,6 +335,7 @@ void loop()
         debug_msg("failed");
         Serial.println(ret);
       }
+      digitalWrite(GLED, LOW); // LED on when pin is High
     }
   }
 
